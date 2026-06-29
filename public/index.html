@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>山不让尘 · 川不辞盈</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="calligraphy">山不让尘川不辞盈</div>
+
+<div class="main-container">
+  <div class="tabs">
+    <button data-tab="browse" class="active">浏览</button>
+    <button data-tab="search">搜索</button>
+  </div>
+
+  <!-- tab: browse -->
+  <div id="tabBrowse">
+    <div class="card upload-card">
+      <div class="upload-area">
+        <input type="file" id="fileInput" multiple accept=".txt,.md,.pdf">
+        <span class="upload-hint">选择文件后自动上传，支持多选</span>
+      </div>
+      <div class="upload-status" id="uploadStatus"></div>
+    </div>
+
+    <div class="card list-card">
+      <div class="list-header">
+        <span id="docTotal"></span>
+      </div>
+      <div class="doc-list" id="docList">
+        <div class="empty-state">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- tab: search -->
+  <div id="tabSearch" style="display:none;">
+    <div class="chat-container">
+      <div class="chat-messages" id="searchResults">
+        <div class="message welcome">
+          <div class="msg-content">输入关键词或问题开始搜索</div>
+        </div>
+      </div>
+      <div class="ai-answer" id="aiAnswer"></div>
+      <div class="chat-input-area">
+        <div class="chat-input-wrapper">
+          <input type="text" id="aiInput" placeholder="向知识库提问..." autocomplete="off">
+          <button class="chat-send-btn" id="sendBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notification" id="notification"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
