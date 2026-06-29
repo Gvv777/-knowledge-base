@@ -257,15 +257,14 @@ function renderChatHistory() {
 
 // ==================== chat / search ====================
 
-function addMessage(type, html) {
+function addMessage(type, html, text) {
   var container = document.getElementById('searchResults');
   var div = document.createElement('div');
   div.className = 'message ' + type;
   div.innerHTML = html;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
-  // 保存到历史
-  chatHistory.push({ type: type, html: html });
+  chatHistory.push({ type: type, html: html, text: text || '' });
   saveChatHistory();
 }
 
@@ -274,7 +273,7 @@ function clearChat() {
   saveChatHistory();
   var container = document.getElementById('searchResults');
   container.innerHTML = '';
-  addMessage('welcome', '<div class="msg-content">输入关键词或问题开始搜索</div>');
+  addMessage('welcome', '<div class="msg-content">输入关键词或问题开始搜索</div>', '');
 }
 
 function doSend() {
@@ -287,11 +286,11 @@ function doSend() {
   if (welcome) welcome.style.display = 'none';
 
   // 用户消息
-  addMessage('user', '<div class="msg-content">' + escapeHtml(q) + '</div>');
+  addMessage('user', '<div class="msg-content">' + escapeHtml(q) + '</div>', q);
 
   // 关键词搜索 loading
   var loadingId = 'loading-' + Date.now();
-  addMessage('bot', '<div class="msg-content" id="' + loadingId + '"><div class="ai-loading">搜索中</div></div>');
+  addMessage('bot', '<div class="msg-content" id="' + loadingId + '"><div class="ai-loading">搜索中</div></div>', '');
 
   api('GET', '/api/search?q=' + encodeURIComponent(q)).then(function (kwData) {
     var kwHtml = '';
@@ -333,11 +332,26 @@ function doSend() {
       });
     }
 
-    // AI 搜索
-    var aiLoadingId = 'ai-loading-' + Date.now();
-    addMessage('bot', '<div class="msg-content" id="' + aiLoadingId + '"><div class="ai-loading">AI 分析中</div></div>');
+    // AI 搜索 - 构建对话历史
+    var hist = [];
+    for (var i = 0; i < chatHistory.length; i++) {
+      if (chatHistory[i].type === 'user' && chatHistory[i].text) {
+        var pair = { question: chatHistory[i].text };
+        // 找下一个 bot 消息作为 answer
+        for (var j = i + 1; j < chatHistory.length; j++) {
+          if (chatHistory[j].type === 'bot' && chatHistory[j].text) {
+            pair.answer = chatHistory[j].text;
+            break;
+          }
+        }
+        hist.push(pair);
+      }
+    }
 
-    api('POST', '/api/search/ai', { q: q, history: chatHistory.slice(-6) }).then(function (aiData) {
+    var aiLoadingId = 'ai-loading-' + Date.now();
+    addMessage('bot', '<div class="msg-content" id="' + aiLoadingId + '"><div class="ai-loading">AI 分析中</div></div>', '');
+
+    api('POST', '/api/search/ai', { q: q, history: hist.slice(-6) }).then(function (aiData) {
       var aiEl = document.getElementById(aiLoadingId);
       if (aiEl) {
         var parent = aiEl.closest('.message');
@@ -371,7 +385,7 @@ function doSend() {
       tempDiv.innerHTML = answerHtml;
       container.appendChild(tempDiv);
       container.scrollTop = container.scrollHeight;
-      chatHistory.push({ type: 'bot', html: answerHtml });
+      chatHistory.push({ type: 'bot', html: answerHtml, text: aiData.answer });
       saveChatHistory();
 
       var textEl = tempDiv.querySelector('.ai-text');
