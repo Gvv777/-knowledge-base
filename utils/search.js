@@ -232,27 +232,41 @@ async function aiSearch(query, index) {
   // 构建上下文
   const context = relevant.map(d => {
     const content = (d.content || '');
-    // 截取前 2000 字符，但保留匹配附近的内容
-    let excerpt = content.slice(0, 2000);
-    // 如果 doc 有分数说明有关键词匹配，尝试找到匹配段
+    // 按段落截取，保持语义完整
     const score = docScores.find(s => s.doc.id === d.id)?.score || 0;
-    if (score > 0 && content.length > 2000) {
-      // 找到第一个匹配位置，取周围内容
-      const matchedTerm = terms.find(t => content.toLowerCase().includes(t));
-      if (matchedTerm) {
-        const idx = content.toLowerCase().indexOf(matchedTerm);
-        const start = Math.max(0, idx - 200);
-        excerpt = content.slice(start, start + 2000);
+    let excerpt = content;
+    if (content.length > 2500) {
+      if (score > 0) {
+        const matchedTerm = terms.find(t => content.toLowerCase().includes(t));
+        if (matchedTerm) {
+          const idx = content.toLowerCase().indexOf(matchedTerm);
+          const start = Math.max(0, idx - 300);
+          const raw = content.slice(start, start + 2500);
+          // 在截取范围内取完整段落
+          const lastPara = raw.lastIndexOf('\n\n');
+          if (lastPara > raw.length - 500) {
+            excerpt = raw.slice(0, lastPara);
+          } else {
+            excerpt = raw;
+          }
+        } else {
+          excerpt = content.slice(0, 2500);
+        }
+      } else {
+        excerpt = content.slice(0, 2500);
       }
     }
     return `【${d.title}】\n${excerpt}`;
   }).join('\n\n---\n\n');
 
-  const systemPrompt = '你是一个知识库智能助手。根据以下文档内容回答用户问题。要求：\n'
+  const systemPrompt = '你是一个知识库智能助手。根据以下文档内容回答用户问题。\n'
+    + '要求：\n'
     + '1. 基于提供的文档内容回答，不要编造信息\n'
     + '2. 如果文档中没有相关信息，如实说明"未在知识库中找到相关内容"\n'
-    + '3. 引用来源时标注文档名称\n'
-    + '4. 用中文回答';
+    + '3. 引用来源时在对应内容后标注来源文档名称，如「来源：xxx」\n'
+    + '4. 用中文回答\n'
+    + '5. 回答使用 Markdown 格式：适当使用 **加粗**、- 列表、`代码` 等，让回答结构清晰、易于阅读\n'
+    + '6. 如果内容适合分点，请用数字列表或无序列表组织';
 
   const userPrompt = `文档内容：\n${context}\n\n---\n\n问题：${query}`;
 
@@ -264,7 +278,7 @@ async function aiSearch(query, index) {
         { role: 'user', content: userPrompt }
       ],
       temperature: 0.3,
-      max_tokens: 2000
+      max_tokens: 3000
     });
 
     const answer = result.choices && result.choices[0]

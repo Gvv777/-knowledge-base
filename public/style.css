@@ -512,6 +512,126 @@ body::before {
   transform: scale(0.92);
 }
 
+/* ====== chat header ====== */
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* ====== keyword toggle ====== */
+.kw-item {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: border-color 0.2s;
+}
+
+.kw-item:hover {
+  border-color: rgba(120, 120, 240, 0.1);
+}
+
+.kw-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.kw-toggle {
+  font-size: 11px;
+  color: #606078;
+  letter-spacing: 0;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* ====== sources ====== */
+.source-link {
+  cursor: pointer;
+  margin-right: 8px;
+  color: #8080b0;
+  transition: color 0.2s;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+.source-link:hover {
+  color: #b0b0e0;
+  text-decoration: underline;
+}
+
+/* ====== markdown styles ====== */
+.ai-text p {
+  margin-bottom: 8px;
+}
+
+.ai-text strong {
+  color: #e8e8f0;
+  font-weight: 600;
+}
+
+.ai-text em {
+  color: #c0c0d8;
+}
+
+.ai-text ul, .ai-text ol {
+  margin: 6px 0 8px 20px;
+  padding-left: 4px;
+}
+
+.ai-text li {
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+
+.ai-text code {
+  background: rgba(120, 120, 240, 0.08);
+  color: #c0c0e8;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+}
+
+.ai-text pre {
+  background: rgba(10, 10, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.ai-text pre code {
+  background: transparent;
+  padding: 0;
+  color: #c8c8d8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ====== typing cursor ====== */
+.ai-text:empty::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 16px;
+  background: rgba(180, 160, 240, 0.5);
+  margin-left: 2px;
+  animation: blink 0.8s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* ====== notification ====== */
 .notification {
   position: fixed;
