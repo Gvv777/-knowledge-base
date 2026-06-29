@@ -5,7 +5,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { extractText } = require('./utils/extractor');
-const { keywordSearch, aiSearch, loadIndex, saveIndex } = require('./utils/search');
+const { keywordSearch, aiSearch, loadIndex, saveIndex, rebuildChunks } = require('./utils/search');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -74,6 +74,7 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
     }
 
     saveIndex(index);
+    rebuildChunks(index);
     res.json({ success: true, results });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -125,8 +126,9 @@ app.get('/api/search', (req, res) => {
 // AI 语义搜索
 app.post('/api/search/ai', async (req, res) => {
   const query = req.body.q || '';
+  const history = req.body.history || [];
   const index = loadIndex();
-  const result = await aiSearch(query, index);
+  const result = await aiSearch(query, index, history);
   res.json(result);
 });
 

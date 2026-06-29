@@ -3,13 +3,11 @@ const path = require('path');
 const https = require('https');
 
 const INDEX_PATH = path.join(__dirname, '..', 'data', 'index.json');
+const CHUNK_PATH = path.join(__dirname, '..', 'data', 'chunks.json');
 
 function loadIndex() {
-  try {
-    return JSON.parse(fs.readFileSync(INDEX_PATH, 'utf-8'));
-  } catch {
-    return { documents: [] };
-  }
+  try { return JSON.parse(fs.readFileSync(INDEX_PATH, 'utf-8')); }
+  catch { return { documents: [] }; }
 }
 
 function saveIndex(index) {
@@ -18,132 +16,181 @@ function saveIndex(index) {
   fs.writeFileSync(INDEX_PATH, JSON.stringify(index, null, 2), 'utf-8');
 }
 
-// ==================== 分词工具 ====================
-
-function extractNGrams(text, minN, maxN) {
-  const chars = text.replace(/[\s\r\n]+/g, '').split('');
-  const ngrams = new Set();
-  for (let n = minN; n <= maxN; n++) {
-    for (let i = 0; i <= chars.length - n; i++) {
-      ngrams.add(chars.slice(i, i + n).join('').toLowerCase());
-    }
-  }
-  return [...ngrams];
+function loadChunks() {
+  try { return JSON.parse(fs.readFileSync(CHUNK_PATH, 'utf-8')); }
+  catch { return []; }
 }
+
+function saveChunks(chunks) {
+  const dir = path.dirname(CHUNK_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(CHUNK_PATH, JSON.stringify(chunks, null, 2), 'utf-8');
+}
+
+// ==================== 文档分块 ====================
+
+function chunkDocument(text, title, docId, docType) {
+  const CHUNK_SIZE = 500;
+  const CHUNK_OVERLAP = 50;
+  const chunks = [];
+  let start = 0;
+  let seq = 0;
+
+  while (start < text.length) {
+    let end = Math.min(start + CHUNK_SIZE, text.length);
+    let chunkText = text.slice(start, end);
+
+    if (end < text.length) {
+      const lastPara = chunkText.lastIndexOf('\n\n');
+      const lastSentence = chunkText.lastIndexOf('。');
+      const breakAt = Math.max(lastPara, lastSentence, -1);
+      if (breakAt > CHUNK_SIZE * 0.3) {
+        chunkText = chunkText.slice(0, breakAt);
+        start += breakAt;
+      } else {
+        start = end;
+      }
+    } else {
+      start = end;
+    }
+
+    chunks.push({
+      id: docId + '_c' + seq,
+      docId,
+      docTitle: title,
+      docType,
+      seq,
+      text: chunkText.trim()
+    });
+    seq++;
+    start = Math.max(start - CHUNK_OVERLAP, start + 1);
+  }
+
+  return chunks;
+}
+
+function rebuildChunks(index) {
+  const allChunks = [];
+  index.documents.forEach(function (doc) {
+    const content = doc.content || '';
+    if (content.length > 0) {
+      const docChunks = chunkDocument(content, doc.title, doc.id, doc.type);
+      allChunks.push.apply(allChunks, docChunks);
+    }
+  });
+  saveChunks(allChunks);
+  return allChunks;
+}
+
+// ==================== 分词 ====================
 
 function extractTerms(query) {
   const q = query.toLowerCase().trim();
   if (!q) return [];
-
   const terms = new Set();
+  q.split(/\s+/).forEach(function (p) { if (p.length > 0) terms.add(p); });
 
-  // 按空白分割
-  const parts = q.split(/\s+/);
-  parts.forEach(p => {
-    if (p.length > 0) terms.add(p);
-  });
-
-  // 对于英文单词，保持原样
-  // 对于中文/混合内容，提取字符 n-gram
   const hasCJK = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(q);
   if (hasCJK) {
-    // 单字符（跳过纯空白/符号）
     const chars = q.replace(/[\s\r\n]/g, '').split('');
-    chars.forEach(c => {
-      if (/[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]/.test(c)) {
-        terms.add(c);
-      }
+    chars.forEach(function (c) {
+      if (/[\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9]/.test(c)) terms.add(c);
     });
-
-    // 2-gram 和 3-gram
-    for (let n = 2; n <= Math.min(4, chars.length); n++) {
-      for (let i = 0; i <= chars.length - n; i++) {
-        const gram = chars.slice(i, i + n).join('');
+    for (var n = 2; n <= Math.min(4, chars.length); n++) {
+      for (var i = 0; i <= chars.length - n; i++) {
+        var gram = chars.slice(i, i + n).join('');
         if (gram.length >= 2) terms.add(gram);
       }
     }
   }
-
-  return [...terms];
+  return Array.from(terms);
 }
 
-// ==================== 关键词搜索 ====================
+// ==================== chunk 搜索 ====================
 
-function keywordSearch(query, index) {
-  if (!query.trim()) return [];
-  const terms = extractTerms(query);
+function chunkSearch(query, chunks) {
+  if (!query.trim() || !chunks || chunks.length === 0) return [];
+  var terms = extractTerms(query);
   if (terms.length === 0) return [];
 
-  const results = [];
+  var scored = [];
 
-  index.documents.forEach(doc => {
-    const content = (doc.content || '');
-    const contentLower = content.toLowerCase();
-    const title = (doc.title || '');
-    const titleLower = title.toLowerCase();
+  chunks.forEach(function (chunk) {
+    var text = chunk.text || '';
+    var textLower = text.toLowerCase();
+    var titleLower = (chunk.docTitle || '').toLowerCase();
+    var score = 0;
 
-    let score = 0;
-    const matchSet = new Set();
-
-    terms.forEach(term => {
-      let pos = 0;
-      let found = false;
-      while (pos < contentLower.length) {
-        const idx = contentLower.indexOf(term, pos);
+    terms.forEach(function (term) {
+      var pos = 0;
+      while (pos < textLower.length) {
+        var idx = textLower.indexOf(term, pos);
         if (idx === -1) break;
-        found = true;
-        // 长词匹配得分更高
-        const termWeight = Math.min(term.length, 5);
-        score += termWeight;
-        matchSet.add(idx);
+        score += Math.min(term.length, 5);
         pos = idx + 1;
       }
-      // 标题匹配：加权
-      if (titleLower.includes(term)) {
-        score += term.length * 3;
-      }
+      if (titleLower.includes(term)) score += term.length * 3;
     });
 
     if (score > 0) {
-      // 按匹配密度归一化
-      const density = score / Math.max(content.length, 1) * 10000;
-      results.push({
-        id: doc.id,
-        title: doc.title,
-        type: doc.type,
-        score: Math.round(score * 100 + density),
-        // 取前 4 个匹配位置生成片段
-        snippets: [...matchSet].slice(0, 4).map(idx => {
-          const start = Math.max(0, idx - 20);
-          const end = Math.min(content.length, idx + 80);
-          let snippet = content.slice(start, end);
-          // 高亮匹配词
-          terms.forEach(t => {
-            snippet = snippet.replace(
-              new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-              m => '🔍' + m + '🔍'
-            );
-          });
-          return snippet;
-        })
-      });
+      scored.push({ chunk: chunk, score: score, density: score / Math.max(text.length, 1) });
     }
   });
 
-  results.sort((a, b) => b.score - a.score);
-  return results;
+  scored.sort(function (a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.density - a.density;
+  });
+
+  return scored.slice(0, 15);
 }
 
-// ==================== AI 搜索（DeepSeek API）====================
+function buildContext(scoredChunks) {
+  var totalLen = 0;
+  var parts = [];
+  var maxLen = 4000;
+
+  for (var i = 0; i < scoredChunks.length; i++) {
+    var s = scoredChunks[i];
+    var text = s.chunk.text;
+    if (totalLen + text.length > maxLen && parts.length > 0) break;
+    parts.push('【' + s.chunk.docTitle + ' - 第' + (s.chunk.seq + 1) + '段】\n' + text);
+    totalLen += text.length;
+  }
+  return parts.join('\n\n---\n\n');
+}
+
+// ==================== 关键词搜索（对外 API）====================
+
+function keywordSearch(query) {
+  var chunks = loadChunks();
+  var results = chunkSearch(query, chunks);
+  var docMap = {};
+
+  results.forEach(function (r) {
+    var docId = r.chunk.docId;
+    if (!docMap[docId]) {
+      docMap[docId] = { id: docId, title: r.chunk.docTitle, type: r.chunk.docType, score: 0, snippets: [] };
+    }
+    docMap[docId].score += r.score;
+    if (docMap[docId].snippets.length < 3) {
+      docMap[docId].snippets.push(r.chunk.text.slice(0, 150));
+    }
+  });
+
+  var arr = Object.values(docMap);
+  arr.sort(function (a, b) { return b.score - a.score; });
+  return arr;
+}
+
+// ==================== AI 搜索 ====================
 
 function callDeepSeekAPI(payload) {
-  return new Promise((resolve, reject) => {
-    const apiKey = process.env.DEEPSEEK_API_KEY || '';
-    if (!apiKey) {
-      return reject(new Error('API 密钥未配置'));
-    }
-    const data = JSON.stringify(payload);
-    const options = {
+  return new Promise(function (resolve, reject) {
+    var apiKey = process.env.DEEPSEEK_API_KEY || '';
+    if (!apiKey) return reject(new Error('API 密钥未配置'));
+    var data = JSON.stringify(payload);
+    var options = {
       hostname: 'api.deepseek.com',
       path: '/v1/chat/completions',
       method: 'POST',
@@ -154,144 +201,99 @@ function callDeepSeekAPI(payload) {
       },
       timeout: 30000
     };
-
-    const req = https.request(options, res => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
+    var req = https.request(options, function (res) {
+      var body = '';
+      res.on('data', function (chunk) { body += chunk; });
+      res.on('end', function () {
         try {
-          const parsed = JSON.parse(body);
-          if (parsed.error) {
-            reject(new Error(parsed.error.message || parsed.error.code));
-          } else {
-            resolve(parsed);
-          }
-        } catch {
-          reject(new Error('解析 API 响应失败'));
-        }
+          var parsed = JSON.parse(body);
+          if (parsed.error) reject(new Error(parsed.error.message || parsed.error.code));
+          else resolve(parsed);
+        } catch (e) { reject(new Error('解析 API 响应失败')); }
       });
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('API 请求超时')); });
+    req.on('timeout', function () { req.destroy(); reject(new Error('API 请求超时')); });
     req.write(data);
     req.end();
   });
 }
 
-async function aiSearch(query, index) {
+async function aiSearch(query, index, history) {
   if (!query.trim()) return { answer: '请输入问题', sources: [] };
-
-  const docs = index.documents;
-  if (docs.length === 0) return { answer: '知识库为空，请先上传文档', sources: [] };
-
-  // 关键词粗筛：使用同样的 terms 提取
-  const terms = extractTerms(query);
-  const docScores = [];
-
-  docs.forEach(doc => {
-    const contentLower = (doc.content || '').toLowerCase();
-    const titleLower = (doc.title || '').toLowerCase();
-    let score = 0;
-
-    terms.forEach(term => {
-      let pos = 0;
-      while ((pos = contentLower.indexOf(term, pos)) !== -1) {
-        score += Math.min(term.length, 5);
-        pos++;
-      }
-      if (titleLower.includes(term)) {
-        score += term.length * 5;
-      }
-    });
-
-    // 标题本身与查询的相似度加分
-    const titleWords = query.split(/\s+/);
-    titleWords.forEach(w => {
-      if (w.length > 1 && titleLower.includes(w)) {
-        score += 10;
-      }
-    });
-
-    docScores.push({ doc, score });
-  });
-
-  // 取匹配分数最高的文档，放宽条件：只要有分数就纳入
-  docScores.sort((a, b) => b.score - a.score);
-  const candidates = docScores.filter(d => d.score > 0);
-
-  // 如果关键词筛选不到文档，仍取所有文档的前 N 篇按长度降序作为后备
-  let relevant;
-  if (candidates.length === 0) {
-    relevant = docs
-      .sort((a, b) => (b.content || '').length - (a.content || '').length)
-      .slice(0, 5);
-  } else {
-    relevant = candidates.slice(0, 5).map(c => c.doc);
+  if (!index.documents || index.documents.length === 0) {
+    return { answer: '知识库为空，请先上传文档', sources: [] };
   }
 
-  // 构建上下文
-  const context = relevant.map(d => {
-    const content = (d.content || '');
-    // 按段落截取，保持语义完整
-    const score = docScores.find(s => s.doc.id === d.id)?.score || 0;
-    let excerpt = content;
-    if (content.length > 2500) {
-      if (score > 0) {
-        const matchedTerm = terms.find(t => content.toLowerCase().includes(t));
-        if (matchedTerm) {
-          const idx = content.toLowerCase().indexOf(matchedTerm);
-          const start = Math.max(0, idx - 300);
-          const raw = content.slice(start, start + 2500);
-          // 在截取范围内取完整段落
-          const lastPara = raw.lastIndexOf('\n\n');
-          if (lastPara > raw.length - 500) {
-            excerpt = raw.slice(0, lastPara);
-          } else {
-            excerpt = raw;
-          }
-        } else {
-          excerpt = content.slice(0, 2500);
-        }
-      } else {
-        excerpt = content.slice(0, 2500);
+  var chunks = loadChunks();
+  var scoredChunks = chunkSearch(query, chunks);
+
+  if (scoredChunks.length === 0) {
+    index.documents.forEach(function (doc) {
+      var content = doc.content || '';
+      var firstChunk = content.slice(0, 500);
+      if (firstChunk) {
+        scoredChunks.push({
+          chunk: { docId: doc.id, docTitle: doc.title, docType: doc.type, seq: 0, text: firstChunk },
+          score: 0, density: 0
+        });
       }
+    });
+    scoredChunks = scoredChunks.slice(0, 5);
+  }
+
+  var context = buildContext(scoredChunks);
+
+  var seen = {};
+  var sources = [];
+  scoredChunks.forEach(function (s) {
+    if (!seen[s.chunk.docId]) {
+      seen[s.chunk.docId] = true;
+      sources.push({ id: s.chunk.docId, title: s.chunk.docTitle, type: s.chunk.docType });
     }
-    return `【${d.title}】\n${excerpt}`;
-  }).join('\n\n---\n\n');
+  });
 
-  const systemPrompt = '你是一个知识库智能助手。根据以下文档内容回答用户问题。\n'
-    + '要求：\n'
-    + '1. 基于提供的文档内容回答，不要编造信息\n'
-    + '2. 如果文档中没有相关信息，如实说明"未在知识库中找到相关内容"\n'
-    + '3. 引用来源时在对应内容后标注来源文档名称，如「来源：xxx」\n'
-    + '4. 用中文回答\n'
-    + '5. 回答使用 Markdown 格式：适当使用 **加粗**、- 列表、`代码` 等，让回答结构清晰、易于阅读\n'
-    + '6. 如果内容适合分点，请用数字列表或无序列表组织';
+  var messages = [
+    {
+      role: 'system',
+      content: '你是一个知识库智能助手。根据以下文档内容回答用户问题。\n'
+        + '要求：\n'
+        + '1. 严格基于提供的文档内容回答，不要编造信息\n'
+        + '2. 如果文档中没有相关信息，如实说明"未在知识库中找到相关内容"\n'
+        + '3. 引用时标注来源文档名称和段落编号，如「来源：xxx 第3段」\n'
+        + '4. 用中文回答\n'
+        + '5. 回答使用 Markdown 格式：**加粗**、- 列表、`代码` 等\n'
+        + '6. 结合对话历史理解追问上下文'
+    }
+  ];
 
-  const userPrompt = `文档内容：\n${context}\n\n---\n\n问题：${query}`;
+  if (history && Array.isArray(history)) {
+    var recent = history.slice(-6);
+    recent.forEach(function (h) {
+      messages.push({ role: 'user', content: h.question });
+      if (h.answer) messages.push({ role: 'assistant', content: h.answer });
+    });
+  }
+
+  messages.push({
+    role: 'user',
+    content: '文档内容：\n' + context + '\n\n---\n\n问题：' + query
+  });
 
   try {
-    const result = await callDeepSeekAPI({
+    var result = await callDeepSeekAPI({
       model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
+      messages: messages,
       temperature: 0.3,
       max_tokens: 3000
     });
-
-    const answer = result.choices && result.choices[0]
+    var answer = result.choices && result.choices[0]
       ? result.choices[0].message.content
       : 'AI 返回结果异常';
-
-    return {
-      answer,
-      sources: relevant.map(d => ({ id: d.id, title: d.title, type: d.type }))
-    };
+    return { answer: answer, sources: sources };
   } catch (err) {
     return { answer: 'AI 搜索失败：' + err.message, sources: [] };
   }
 }
 
-module.exports = { keywordSearch, aiSearch, loadIndex, saveIndex };
+module.exports = { keywordSearch, aiSearch, loadIndex, saveIndex, rebuildChunks };

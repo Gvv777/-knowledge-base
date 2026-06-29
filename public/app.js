@@ -337,7 +337,7 @@ function doSend() {
     var aiLoadingId = 'ai-loading-' + Date.now();
     addMessage('bot', '<div class="msg-content" id="' + aiLoadingId + '"><div class="ai-loading">AI 分析中</div></div>');
 
-    api('POST', '/api/search/ai', { q: q }).then(function (aiData) {
+    api('POST', '/api/search/ai', { q: q, history: chatHistory.slice(-6) }).then(function (aiData) {
       var aiEl = document.getElementById(aiLoadingId);
       if (aiEl) {
         var parent = aiEl.closest('.message');
