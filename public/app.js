@@ -205,12 +205,27 @@ function uploadFiles() {
   }
 
   api('POST', '/api/upload', formData).then(function (data) {
-    var ok = data.results.filter(function (r) { return !r.error; }).length;
-    var err = data.results.filter(function (r) { return r.error; }).length;
-    status.textContent = '上传完成: ' + ok + ' 成功' + (err ? ', ' + err + ' 失败' : '');
+    var ok = data.results.filter(function (r) { return !r.error; });
+    var err = data.results.filter(function (r) { return r.error; });
+    var msg = '';
+    if (ok.length > 0) msg += ok.length + ' 成功';
+    if (err.length > 0) msg += (msg ? ', ' : '') + err.length + ' 失败';
+    // 显示每个失败文件的错误原因
+    if (err.length > 0) {
+      msg += '<br>';
+      err.forEach(function (r) {
+        msg += '<div style="font-size:12px;color:#d07080;margin-top:4px;">- ' + escapeHtml(r.title) + ': ' + escapeHtml(r.error) + '</div>';
+      });
+    }
+    status.innerHTML = msg;
     input.value = '';
     loadDocs();
-    notify('上传完成, ' + ok + ' 篇文档已加入知识库', 'success');
+    if (ok.length > 0) {
+      notify('上传完成, ' + ok.length + ' 篇文档已加入知识库', 'success');
+    }
+    if (err.length > 0 && ok.length === 0) {
+      notify('上传失败: ' + err[0].error, 'error');
+    }
   }).catch(function (err) {
     status.textContent = '上传失败: ' + err.message;
     notify(err.message, 'error');
