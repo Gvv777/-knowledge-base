@@ -32,10 +32,10 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowed = ['.txt', '.md', '.pdf'];
+    const allowed = ['.txt', '.md', '.pdf', '.png', '.jpg', '.jpeg'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) return cb(null, true);
-    cb(new Error('不支持的文件类型，仅支持 .txt .md .pdf'));
+    cb(new Error('不支持的文件类型，仅支持 .txt .md .pdf .png .jpg .jpeg'));
   },
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
@@ -53,7 +53,10 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
 
     for (const file of files) {
       const ext = path.extname(file.originalname).toLowerCase();
-      const mimetype = ext === '.pdf' ? 'application/pdf' : 'text/plain';
+      const imageExts = ['.png', '.jpg', '.jpeg'];
+      let mimetype = 'text/plain';
+      if (ext === '.pdf') mimetype = 'application/pdf';
+      else if (imageExts.includes(ext)) mimetype = 'image/' + ext.slice(1);
 
       try {
         const content = await extractText(file.path, mimetype);
