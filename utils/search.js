@@ -63,7 +63,7 @@ function chunkDocument(text, title, docId, docType) {
       text: chunkText.trim()
     });
     seq++;
-    start = Math.max(start - CHUNK_OVERLAP, start + 1);
+    start = Math.max(start, 1);
   }
 
   return chunks;
@@ -231,7 +231,7 @@ async function aiSearch(query, index, history) {
   if (scoredChunks.length === 0) {
     index.documents.forEach(function (doc) {
       var content = doc.content || '';
-      var firstChunk = content.slice(0, 500);
+      var firstChunk = content.slice(0, 2000);
       if (firstChunk) {
         scoredChunks.push({
           chunk: { docId: doc.id, docTitle: doc.title, docType: doc.type, seq: 0, text: firstChunk },

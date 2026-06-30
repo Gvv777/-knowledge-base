@@ -142,6 +142,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
+  rebuildChunks(loadIndex());
   console.log('知识库系统已启动');
   console.log('访问地址: http://localhost:' + PORT);
   console.log('API 密钥: ' + (process.env.DEEPSEEK_API_KEY ? '已配置' : '未配置'));
